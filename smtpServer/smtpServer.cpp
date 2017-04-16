@@ -5,6 +5,7 @@
  ******************************************************************/
 #define	_CRT_SECURE_NO_WARNINGS
 
+
 #include"include\smtp_type.h"
 #include"include\Trace.h"
 #include"text_tools.h"
@@ -14,11 +15,15 @@
 #define inet_pton(family,addString,addBuf) InetPton(family,addString,addBuf)
 
 #include<WinSock2.h>
-#pragma comment(lib, "ws2_32.lib")
 #include"mysql.h"
 #include<string>
 #include<iostream>
 using namespace std;
+
+ //use boost
+#define BOOST_THREAD_VERSION 4
+#include<boost\thread.hpp>
+using namespace boost;
 
 #define DATABASENAME "smtp"
 #define DATABASEUSER "root"
@@ -26,6 +31,7 @@ using namespace std;
 #define MYSQL_IP "127.0.0.1"
 #define MYSQL_PORT 3306
 #define MYSQL_TABLE "smtp_info"
+
 
 //全局变量
 config_info_type g_config_info;
@@ -39,15 +45,14 @@ MYSQL* MySQLInitConn(const char* host, const char* user, const char* pass, const
 	sock = mysql_init(NULL);
 	if (sock &&mysql_real_connect(sock, host, user, pass, db, port, NULL, 0))
 	{
-		cout << "Connect Mysql Succeed!" << endl;
+		__TRACE__ ("Connect Mysql Succeed!\n");
 		mysql_query(sock, "set names gb2312;");//设置编码格式,否则在cmd下无法显示中文 
 	}
 	else
 	{
-		cout << "Connect Database \" " << db << " \" failed" << endl;
-		cout << mysql_error(sock) << endl;
+		__TRACE__ ("Connect Database \" %s \" failed\n",db );
+		__TRACE__("%s\n",mysql_error(sock));
 		mysql_close(sock);
-		system("pause");
 		exit(0);
 	}
 	return sock;
@@ -137,7 +142,7 @@ SOCKET SocketInit()
 	addrSrv.sin_family = AF_INET;  //使用的是TCP/IP 
 	addrSrv.sin_port = g_config_info.server_port;  //转为网络序  设置端口号
 
-	bind(socketServer, (sockaddr*)&addrSrv, sizeof(sockaddr));  //绑定
+	::bind(socketServer, (sockaddr*)&addrSrv, sizeof(sockaddr));  //绑定
 	listen(socketServer, 5);
 
 	return socketServer;
@@ -172,10 +177,10 @@ bool CreateSmtpInfoTable(MYSQL* sock)
 	);
 	if (mysql_query(sock, sqlString.c_str()))
 	{
-		cout << "Query Failed" << endl;
+		__TRACE__( "Query Failed\n" );
 		return false;
 	}
-	cout << "创建表成功" << endl;;
+	__TRACE__("创建表成功\n");
 	return true;
 }
 
@@ -255,11 +260,11 @@ bool InsertSmtpInfo(MYSQL* sock,mail_data_type& mailData)
 
 	if (mysql_query(sock, sqlString.c_str()))
 	{
-		cout << "insert failed" << endl;
+		__TRACE__("insert failed\n" );
 		return false;
 	}
 
-	cout << "Insert Successed" << endl;
+	__TRACE__("Insert Successed\n");
 	return true;
 }
 
@@ -269,8 +274,7 @@ void TestMysql()
 	string sqlString("SELECT * FROM table1");
 	if (mysql_query(sock, sqlString.c_str()))
 	{
-		cout << "Query Failed" << endl;
-		system("pause");
+		__TRACE__( "Query Failed\n") ;
 		exit(0);
 	}
 	auto res = mysql_store_result(sock);
@@ -287,6 +291,24 @@ void TestMysql()
 
 }
 
+void thread_start(SOCKET sockConn,MYSQL* sock, mail_data_type& mailData)
+{
+	int receivedNums = 0;
+	int mailDataLen = sizeof(mail_data_type);
+	while (1)
+	{
+		receivedNums += recv(sockConn, (char*)&mailData + receivedNums, mailDataLen - receivedNums, 0);
+		if (receivedNums >= mailDataLen)
+		{
+			break;
+		}
+	}
+
+	InsertSmtpInfo(sock, mailData);
+
+	//关闭socket
+	closesocket(sockConn);
+}
 
 
 int main()
@@ -300,35 +322,17 @@ int main()
 	SOCKADDR_IN addrClient;  //保存客户端的ip地址
 	int len = sizeof(SOCKADDR);
 	mail_data_type mailData;
-	int mailDataLen = sizeof(mail_data_type);
-	int receivedNums = 0;
 
-	MYSQL* sock = MySQLInitConn(MYSQL_IP, DATABASEUSER, DATABASE_PASSWD, DATABASENAME, MYSQL_PORT);
+	MYSQL* mysqlSock = MySQLInitConn(MYSQL_IP, DATABASEUSER, DATABASE_PASSWD, DATABASENAME, MYSQL_PORT);
 	//CreateSmtpInfoTable(sock);  //创建smtp_info表
 
 	while (1)
 	{
 		//accept
 		SOCKET sockConn = accept(socketServer, (SOCKADDR*)&addrClient, &len);
-		//接收数据
-		receivedNums = 0;
-		while (1)
-		{
-			receivedNums += recv(sockConn, (char*)&mailData + receivedNums, mailDataLen-receivedNums, 0);
-			if (receivedNums >= mailDataLen)
-			{
-				break;
-			}
-		}
 
-		//存入数据库（下一步重构为创建线程存入数据库）
-		InsertSmtpInfo(sock, mailData);
-		
-		//关闭socket
-		closesocket(sockConn);
+		thread(thread_start, sockConn, mysqlSock, mailData).detach();//创建临时对象，随即分离线程  
 	}
-
-	closesocket(socketServer);
 
 	return 0;
 }
