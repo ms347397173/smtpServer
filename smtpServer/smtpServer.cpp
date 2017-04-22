@@ -7,6 +7,8 @@
 
 
 #include"include\smtp_type.h"
+
+#define __DEBUG__
 #include"include\Trace.h"
 #include"text_tools.h"
 #include<stdio.h>
@@ -46,7 +48,7 @@ MYSQL* MySQLInitConn(const char* host, const char* user, const char* pass, const
 	if (sock &&mysql_real_connect(sock, host, user, pass, db, port, NULL, 0))
 	{
 		__TRACE__ ("Connect Mysql Succeed!\n");
-		mysql_query(sock, "set names gb2312;");//设置编码格式,否则在cmd下无法显示中文 
+		mysql_query(sock, "set names utf8;");//设置编码格式,否则在cmd下无法显示中文 
 	}
 	else
 	{
@@ -235,6 +237,8 @@ bool InsertSmtpInfo(MYSQL* sock,mail_data_type& mailData)
 	sqlString.append("\",");
 
 	//add subject
+	cout <<"Subject:"<< mailData.subject << endl;
+
 	addSql(sqlString, (const char *)mailData.subject);
 	
 	//add date
@@ -260,7 +264,7 @@ bool InsertSmtpInfo(MYSQL* sock,mail_data_type& mailData)
 
 	if (mysql_query(sock, sqlString.c_str()))
 	{
-		__TRACE__("insert failed\n" );
+		__TRACE__("Insert Failed\n" );
 		return false;
 	}
 
@@ -326,11 +330,13 @@ int main()
 	MYSQL* mysqlSock = MySQLInitConn(MYSQL_IP, DATABASEUSER, DATABASE_PASSWD, DATABASENAME, MYSQL_PORT);
 	//CreateSmtpInfoTable(sock);  //创建smtp_info表
 
+	int i = 0;
 	while (1)
 	{
 		//accept
+		printf("---------------------------------------------%d\n", ++i);
 		SOCKET sockConn = accept(socketServer, (SOCKADDR*)&addrClient, &len);
-
+		memset(&mailData, 0, sizeof(mail_data_type));
 		thread(thread_start, sockConn, mysqlSock, mailData).detach();//创建临时对象，随即分离线程  
 	}
 

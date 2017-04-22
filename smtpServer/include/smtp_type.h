@@ -38,6 +38,10 @@ enum smtp_reply_type
 }smtp_reply_state;
 
 */
+
+
+
+
 //these array's size should reconsider,its too long now
 // no mem align
 typedef struct mail_data_type
@@ -64,7 +68,9 @@ typedef struct mail_data_type
 	
 	int sendto_num; //<=32
 	//DATA
-	unsigned char subject[1024];
+	unsigned char subject[256];  //UTF-8 charset
+	//enum subject_charset_type subject_charset;
+
 	unsigned char date[64];
 	unsigned char user_agent[256];
 	unsigned char attachment_name[16][128]; 
@@ -80,6 +86,6 @@ typedef struct config_info_type
 {
 	int server_ip;
 	unsigned short server_port;
-	char eml_path[256];  //在客户端表示eml文件目录，在服务器端表示ftp服务器存储eml文件的目录
+	char eml_path[256];
 	char ftp_url[256];
 }config_info_type;
